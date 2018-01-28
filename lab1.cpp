@@ -1,6 +1,6 @@
 //
-//modified By: Abdullah Aljahdali
-//date:
+//modified by: Abddullah Aljahdali
+//date: Jan 25, 18
 //
 //3350 Spring 2018 Lab-1
 //This program demonstrates the use of OpenGL and XWindows
@@ -40,7 +40,7 @@ using namespace std;
 #include <X11/keysym.h>
 #include <GL/glx.h>
 
-const int MAX_PARTICLES = 2;
+const int MAX_PARTICLES = 10000;
 const float GRAVITY = 0.1;
 
 //some structures
@@ -63,18 +63,24 @@ struct Particle {
 class Global {
 public:
 	int xres, yres;
-	Shape box;
-	Particle particle;
-	int n;
+	Shape box[MAX_PARTICLES];
+	Particle particle[MAX_PARTICLES];
+	int nparticle;
+	int nbox;
 	Global() {
 		xres = 800;
 		yres = 600;
 		//define a box shape
-		box.width = 100;
-		box.height = 10;
-		box.center.x = 120 + 5*65;
-		box.center.y = 500 - 5*60;
-		n = 0;
+		Shape *b;
+		for (int i=0; i<5; i++) {
+			b = &box[nbox];
+			b->width = 100;
+			b->height = 10;
+			b->center.x = -250 + 5*65 +(i*100);
+			b->center.y = yres - 5*60 -(i*50);
+			++nbox;
+		}
+		nparticle = 0;
 	}
 } g;
 
@@ -110,7 +116,7 @@ public:
 			ButtonPress | ButtonReleaseMask |
 			PointerMotionMask |
 			StructureNotifyMask | SubstructureNotifyMask;
-		win = XCreateWindow(dpy, root, 0, 0, w, h, 0, vi->depth,
+		win = XCreateWindow(dpy, root, w, 0, w, h, 0, vi->depth,
 			InputOutput, vi->visual, CWColormap | CWEventMask, &swa);
 		set_title();
 		glc = glXCreateContext(dpy, vi, NULL, GL_TRUE);
@@ -183,16 +189,16 @@ void init_opengl(void)
 
 void makeParticle(int x, int y)
 {
-	if (g.n >= MAX_PARTICLES)
+	if (g.nparticle >= MAX_PARTICLES)
 		return;
 	cout << "makeParticle() " << x << " " << y << endl;
 	//position of particle
-	Particle *p = &g.particle;
+	Particle *p = &g.particle[g.nparticle];
 	p->s.center.x = x;
 	p->s.center.y = y;
-	p->velocity.y = -4.0;
-	p->velocity.x =  1.0;
-	++g.n;
+	p->velocity.y = (float)rand()/(float)RAND_MAX * 1.0 -0.5;
+	p->velocity.x = (float)rand()/(float)RAND_MAX * 1.0 -0.5;
+	++g.nparticle;
 }
 
 void check_mouse(XEvent *e)
@@ -207,14 +213,12 @@ void check_mouse(XEvent *e)
 		return;
 	}
 	//
-	if (e->type == ButtonRelease) {
-		return;
-	}
+	// if (e->type == ButtonRelease) {
+	// 	return;
+	// }
 	if (e->type == ButtonPress) {
 		if (e->xbutton.button==1) {
 			//Left button was pressed
-			int y = g.yres - e->xbutton.y;
-			makeParticle(e->xbutton.x, y);
 			return;
 		}
 		if (e->xbutton.button==3) {
@@ -228,6 +232,9 @@ void check_mouse(XEvent *e)
 			savex = e->xbutton.x;
 			savey = e->xbutton.y;
 
+			int y = g.yres - e->xbutton.y;
+			for (int i=0; i<25; i++)
+				makeParticle(e->xbutton.x, y);
 
 
 		}
@@ -257,23 +264,37 @@ int check_keys(XEvent *e)
 
 void movement()
 {
-	if (g.n <= 0)
+	if (g.nparticle <= 0)
 		return;
-	Particle *p = &g.particle;
-	p->s.center.x += p->velocity.x;
-	p->s.center.y += p->velocity.y;
+	Particle *p;
 
-	//check for collision with shapes...
-	//Shape *s;
+	for (int i=0; i<g.nparticle; i++) {
+		p = &g.particle[i];
+		p->s.center.x += p->velocity.x;
+		p->s.center.y += p->velocity.y;
+		p->velocity.y -= GRAVITY;
 
-
-
-
-	//check for off-screen
-	if (p->s.center.y < 0.0) {
-		cout << "off screen" << endl;
-		g.n = 0;
+		//check for collision with shapes...
+		Shape *s;
+		for (int i=0; i<g.nbox; i++) {
+			s= &g.box[i];
+			float x = s->center.x;
+			float y = s->center.y;
+			float w = s->width;
+			float h = s->height;
+			cout << p->s.center.y << endl;
+			if (p->s.center.y > y-h && p->s.center.y < y+h && p->s.center.x < x+w && p->s.center.x > x-w) {
+				p->velocity.y = -(p->velocity.y);
+				p->velocity.y *= 0.6;
+			}
+			if (p->s.center.y < 0.0) {
+				cout << "off screen" << endl;
+				g.particle[i] = g.particle[g.nparticle-1];
+				--g.nparticle;
+			}
+		}
 	}
+
 }
 
 void render()
@@ -284,33 +305,38 @@ void render()
 	//draw a box
 	Shape *s;
 	glColor3ub(90,140,90);
-	s = &g.box;
-	glPushMatrix();
-	glTranslatef(s->center.x, s->center.y, s->center.z);
-	float w, h;
-	w = s->width;
-	h = s->height;
-	glBegin(GL_QUADS);
-		glVertex2i(-w, -h);
-		glVertex2i(-w,  h);
-		glVertex2i( w,  h);
-		glVertex2i( w, -h);
-	glEnd();
-	glPopMatrix();
-	//
-	//Draw the particle here
-	glPushMatrix();
-	glColor3ub(150,160,220);
-	Vec *c = &g.particle.s.center;
-	w =
-	h = 2;
-	glBegin(GL_QUADS);
-		glVertex2i(c->x-w, c->y-h);
-		glVertex2i(c->x-w, c->y+h);
-		glVertex2i(c->x+w, c->y+h);
-		glVertex2i(c->x+w, c->y-h);
-	glEnd();
-	glPopMatrix();
+	for (int i=0; i<g.nbox; i++) {
+		s = &g.box[i];
+		glPushMatrix();
+		glTranslatef(s->center.x, s->center.y, s->center.z);
+		float w, h;
+		w = s->width;
+		h = s->height;
+		glBegin(GL_QUADS);
+			glVertex2i(-w, -h);
+			glVertex2i(-w,  h);
+			glVertex2i( w,  h);
+			glVertex2i( w, -h);
+		glEnd();
+		glPopMatrix();
+		//
+		//Draw the particle here
+		glPushMatrix();
+		glColor3ub(150,160,220);
+		Vec *c;
+		for (int i=0; i<g.nparticle; i++) {
+			c = &g.particle[i].s.center;
+			w =
+			h = 2;
+			glBegin(GL_QUADS);
+				glVertex2i(c->x-w, c->y-h);
+				glVertex2i(c->x-w, c->y+h);
+				glVertex2i(c->x+w, c->y+h);
+				glVertex2i(c->x+w, c->y-h);
+			glEnd();
+			glPopMatrix();
+		}
+	}
 	//
 	//Draw your 2D text here
 
